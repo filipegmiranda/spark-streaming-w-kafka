@@ -8,10 +8,13 @@ object PopularTags {
 
 
   def main(args: Array[String]) {
+    //setting properties for consuming from Twitter Streaming
     setTwitterProperties(args)
 
+    //filters that are used to filter statuses in the Twitter API
     val filters = args.takeRight(args.length - 4)
 
+    //setting the app name
     val sparkConf = new SparkConf().setAppName("TwitterPopularTags")
 
     // check Spark configuration for master URL, set it to local if not configured
@@ -19,18 +22,23 @@ object PopularTags {
       sparkConf.setMaster("local[*]")
     }
 
-    val ssc = new StreamingContext(sparkConf, Seconds(2))
+    // Instantiating the StreamingContext
+    val ssc = new StreamingContext(sparkConf, Seconds(10))
+
+    // Creating the DStream from Twitter Streaming API
     val stream = TwitterUtils.createStream(ssc, None, filters)
 
+    //creating a new of DStream[String]
     val hashTags = stream.flatMap(status => status.getText.split(" ").filter(_.startsWith("#")))
 
+    // reduceByKeyAndWindow -> available along with reduceByKey in PairDStreams
     val topCounts60 = hashTags.map((_, 1)).reduceByKeyAndWindow(_ + _, Seconds(60))
       .map{case (topic, count) => (count, topic)}
-      .transform(_.sortByKey(false))
+      .transform(_.sortByKey(ascending = false))
 
     val topCounts10 = hashTags.map((_, 1)).reduceByKeyAndWindow(_ + _, Seconds(10))
       .map{case (topic, count) => (count, topic)}
-      .transform(_.sortByKey(false))
+      .transform(_.sortByKey(ascending = false))
 
 
     // Print popular hashtags
@@ -46,7 +54,10 @@ object PopularTags {
       topList.foreach{case (count, tag) => println("%s (%s tweets)".format(tag, count))}
     })
 
+    // Starting to stream
     ssc.start()
+
+    // It keeps running indefinitely, until it is finished
     ssc.awaitTermination()
   }
 
